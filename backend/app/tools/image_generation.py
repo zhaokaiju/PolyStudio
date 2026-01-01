@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,12 @@ except Exception:  # pragma: no cover
     BytesIO = None  # type: ignore
     logger.warning("⚠️ 未安装 Pillow：将无法进行 sRGB 归一化，<img> 与 Excalidraw(canvas) 可能出现颜色差异。请安装 requirements.txt 后重启后端。")
 
+# 优先加载 backend/.env（避免直接运行工具脚本时环境未加载）
+BASE_DIR = Path(__file__).parent.parent.parent
+ENV_PATH = BASE_DIR / ".env"
+if ENV_PATH.exists():
+    load_dotenv(ENV_PATH)
+
 # 从环境变量获取配置，与 agent_service.py 保持一致
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1").strip()
@@ -33,7 +40,7 @@ IMAGE_MODEL_NAME = os.getenv("IMAGE_MODEL_NAME", "Qwen/Qwen-Image").strip()
 EDIT_IMAGE_MODEL_NAME = os.getenv("EDIT_IMAGE_MODEL_NAME", "Qwen/Qwen-Image-Edit-2509").strip()
 
 # 图片存储目录
-BASE_DIR = Path(__file__).parent.parent.parent
+# BASE_DIR 已在上方定义
 STORAGE_DIR = BASE_DIR / "storage"
 IMAGES_DIR = STORAGE_DIR / "images"
 
@@ -312,7 +319,7 @@ def edit_image_tool(prompt: str, image_url: str) -> str:
                     'local_path': local_path,  # 明确标识本地路径
                     'prompt': prompt,
                     'source_image': image_url,  # 记录源图片URL
-                    'message': f'图片已编辑并保存到本地。新图片URL: {local_path}。如需再次编辑此图片，请使用此URL。'
+                    'message': '图片已编辑并保存到本地'
                 }
                 
                 result_json = json.dumps(result, ensure_ascii=False)
@@ -326,3 +333,33 @@ def edit_image_tool(prompt: str, image_url: str) -> str:
         import traceback
         logger.error(traceback.format_exc())
         return f"Error editing image: {str(e)}"
+
+
+if __name__ == "__main__":
+    """测试工具"""
+    from dotenv import load_dotenv
+    from pathlib import Path
+    
+    # 加载 .env 文件（从 backend 目录）
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ 已加载环境变量: {env_path}")
+    else:
+        print(f"⚠️  未找到 .env 文件: {env_path}")
+        print("   请确保已配置环境变量或创建 .env 文件")
+    
+    logging.basicConfig(level=logging.INFO)
+    
+    # 测试生成图片
+    print("\n测试 generate_image 工具...")
+    result = generate_image_tool.invoke({"prompt": "a beautiful sunset over the ocean"})
+    print("生成结果:", result)
+    
+    # 测试编辑图片（需要先有生成的图片URL）
+    # print("\n测试 edit_image 工具...")
+    # result = edit_image_tool.invoke({
+    #     "prompt": "make it more colorful",
+    #     "image_url": "/storage/images/xxx.jpg"
+    # })
+    # print("编辑结果:", result)

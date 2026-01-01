@@ -27,13 +27,47 @@ class HistoryService:
         os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
         if not os.path.exists(self.file_path):
             self._save_data([])
+        else:
+            # 检查文件是否为空或格式错误，如果是则重置
+            try:
+                with open(self.file_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if not content:
+                        logger.warning("历史记录文件为空，重置为空列表")
+                        self._save_data([])
+                    else:
+                        # 尝试解析，如果失败会在 _load_data 中处理
+                        json.loads(content)
+            except (json.JSONDecodeError, Exception) as e:
+                logger.warning(f"初始化时发现历史记录文件格式错误: {e}，重置为空列表")
+                self._save_data([])
 
     def _load_data(self) -> List[Dict[str, Any]]:
         try:
             if not os.path.exists(self.file_path):
                 return []
             with open(self.file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                content = f.read().strip()
+                # 处理空文件或格式错误
+                if not content:
+                    logger.warning(f"历史记录文件为空，返回空列表")
+                    return []
+                return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"历史记录文件格式错误: {e}，尝试修复...")
+            # 如果文件损坏，备份并重置
+            try:
+                backup_path = self.file_path + '.backup'
+                if os.path.exists(self.file_path):
+                    import shutil
+                    shutil.copy2(self.file_path, backup_path)
+                    logger.info(f"已备份损坏文件到: {backup_path}")
+                # 重置为空列表
+                self._save_data([])
+                return []
+            except Exception as backup_error:
+                logger.error(f"备份文件失败: {backup_error}")
+                return []
         except Exception as e:
             logger.error(f"加载历史记录失败: {e}")
             return []

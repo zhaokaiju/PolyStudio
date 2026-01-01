@@ -1,5 +1,5 @@
 """
-生图Agent后端主程序
+PolyStudio后端主程序
 使用FastAPI + LangGraph实现
 """
 from fastapi import FastAPI
@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="生图Agent API", version="1.0.0")
+app = FastAPI(title="PolyStudio API", version="1.0.0")
 
 # 配置CORS
 app.add_middleware(
@@ -40,7 +40,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 
 @app.get("/")
 async def root():
-    return {"message": "生图Agent API", "status": "running"}
+    return {"message": "PolyStudio API", "status": "running"}
 
 
 @app.get("/health")

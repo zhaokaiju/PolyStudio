@@ -1,11 +1,15 @@
 """
 聊天路由 - 处理对话请求
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import json
+import os
+import uuid
+from datetime import datetime
+from pathlib import Path
 from app.services.agent_service import process_chat_stream
 from app.services.history_service import history_service
 
@@ -16,14 +20,6 @@ class ChatRequest(BaseModel):
     message: str
     messages: Optional[List[Dict[str, Any]]] = []
     session_id: Optional[str] = None
-
-
-class CanvasData(BaseModel):
-    id: str
-    name: str
-    createdAt: float
-    images: List[Dict[str, Any]]
-    messages: List[Dict[str, Any]]
 
 
 @router.get("/canvases")
@@ -49,6 +45,51 @@ async def delete_canvas(canvas_id: str):
     """删除画布"""
     history_service.delete_canvas(canvas_id)
     return {"success": True}
+
+
+@router.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    """
+    上传图片到 storage/images 目录
+    
+    Returns:
+        上传后的图片URL（相对路径，如 /storage/images/xxx.jpg）
+    """
+    try:
+        # 确保上传目录存在
+        BASE_DIR = Path(__file__).parent.parent.parent
+        IMAGES_DIR = BASE_DIR / "storage" / "images"
+        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # 验证文件类型
+        content_type = file.content_type or ""
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="只支持图片文件")
+        
+        # 生成唯一文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        
+        # 获取文件扩展名
+        original_filename = file.filename or "image"
+        ext = os.path.splitext(original_filename)[1] or ".jpg"
+        if not ext.startswith("."):
+            ext = ".jpg"
+        
+        filename = f"upload_{timestamp}_{unique_id}{ext}"
+        file_path = IMAGES_DIR / filename
+        
+        # 保存文件
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # 返回相对路径
+        image_url = f"/storage/images/{filename}"
+        return {"url": image_url, "filename": filename}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
 
 
 @router.post("/chat")

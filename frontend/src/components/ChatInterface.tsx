@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Send, Image as ImageIcon, Sparkles, X, History, LayoutGrid, Trash2, ChevronDown, ChevronRight, Link as LinkIcon, Pencil, ArrowLeft } from 'lucide-react'
+import { Send, Paperclip, Image as ImageIcon, Sparkles, X, ChevronDown, ChevronRight, Link as LinkIcon, ArrowLeft, Sun, Moon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import './ChatInterface.css'
 import ExcalidrawCanvas, {
@@ -9,6 +9,9 @@ import ExcalidrawCanvas, {
 
 type ChatInterfaceProps = {
   initialCanvasId?: string
+  theme: 'dark' | 'light'
+  onToggleTheme: () => void
+  onSetTheme: (t: 'dark' | 'light') => void
 }
 
 interface ToolCall {
@@ -25,6 +28,7 @@ interface Message {
   content: string
   postToolContent?: string
   toolCalls?: ToolCall[]
+  imageUrls?: string[] // 用户消息中的图片URL列表
 }
 
 interface CanvasImage {
@@ -47,10 +51,12 @@ interface Canvas {
   messages: Message[]
 }
 
-const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
+const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]) // 上传的图片URL列表
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatMessagesRef = useRef<HTMLDivElement>(null)
   // 注意：为了实现“生成一次展示一次”的节奏，我们不再把所有工具调用塞进同一条 assistant 消息里。
@@ -62,12 +68,10 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
   // 画布管理状态
   const [canvases, setCanvases] = useState<Canvas[]>([])
   const [currentCanvasId, setCurrentCanvasId] = useState<string>('')
-  const [showHistory, setShowHistory] = useState(false)
-  const [editingCanvasId, setEditingCanvasId] = useState<string | null>(null)
-  const [editingCanvasName, setEditingCanvasName] = useState<string>('')
 
   const excalidrawRef = useRef<ExcalidrawCanvasHandle | null>(null)
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false)
+  const pendingSendRef = useRef<string | null>(null) // 标记待发送的消息
 
   const emptyCanvasData: ExcalidrawCanvasData = useMemo(
     () => ({ elements: [], appState: {}, files: {} }),
@@ -147,13 +151,6 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
     }
   }
 
-  const getCanvasImageCount = (canvas: Canvas) => {
-    if (canvas.data?.elements?.length) {
-      return canvas.data.elements.filter((e: any) => e && !e.isDeleted && e.type === 'image')
-        .length
-    }
-    return (canvas.images || []).length
-  }
 
   // 初始化：加载画布列表
   useEffect(() => {
@@ -201,9 +198,21 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
           const lastId = localStorage.getItem('ai_agent_current_canvas_id')
           const preferredId = initialCanvasId || urlId || lastId || ''
           const target = migrated.find((c: Canvas) => c.id === preferredId) || migrated[0]
-          setCurrentCanvasId(target.id)
-          setCanvasIdInUrl(target.id)
-          setMessages(target.messages || [])
+          const canvasId = target.id
+          setCurrentCanvasId(canvasId)
+          setCanvasIdInUrl(canvasId)
+          
+          // 检查是否有待发送的消息（从首页来的）
+          const pendingKey = `pending_prompt:${canvasId}`
+          const pendingImagesKey = `pending_images:${canvasId}`
+          const hasPending = sessionStorage.getItem(pendingKey)
+          
+          // 如果有待发送的消息，不设置后端消息，让 useEffect 处理
+          if (hasPending) {
+            setMessages([])
+          } else {
+            setMessages(target.messages || [])
+          }
         } else {
           createNewCanvas()
         }
@@ -233,7 +242,7 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
   useEffect(() => {
     if (!currentCanvasId) return
     
-    // 防抖：只有当数据停止变化 2秒 后才执行保存
+    // 防抖：只有当数据停止变化 5秒 后才执行保存，降低请求频率
     const timer = setTimeout(() => {
       setCanvases(prev => {
         const next = prev.map(canvas => {
@@ -249,7 +258,7 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
         })
         return next
       })
-    }, 2000)
+    }, 5000)
 
     return () => clearTimeout(timer)
   }, [messages, currentCanvasId])
@@ -274,42 +283,12 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
     // 立即保存新画布
     await saveCanvasToBackend(newCanvas)
     
-    setCanvases(prev => [newCanvas, ...prev])
-    setCurrentCanvasId(newCanvas.id)
-    setCanvasIdInUrl(newCanvas.id)
-    setMessages([]) 
-    setShowHistory(false)
+      setCanvases(prev => [newCanvas, ...prev])
+      setCurrentCanvasId(newCanvas.id)
+      setCanvasIdInUrl(newCanvas.id)
+      setMessages([])
   }
 
-  const switchCanvas = (canvasId: string) => {
-    const targetCanvas = canvases.find(c => c.id === canvasId)
-    if (targetCanvas) {
-      setCurrentCanvasId(canvasId)
-      setCanvasIdInUrl(canvasId)
-      setMessages(targetCanvas.messages || [])
-      setShowHistory(false)
-    }
-  }
-
-  const beginRenameCanvas = (canvas: Canvas) => {
-    setEditingCanvasId(canvas.id)
-    setEditingCanvasName((canvas.name || '').toString())
-  }
-
-  const commitRenameCanvas = async (canvasId: string, name: string) => {
-    const nextName = name.trim() || '未命名项目'
-    setEditingCanvasId(null)
-    setEditingCanvasName('')
-    setCanvases((prev) => {
-      const next = prev.map((c) => (c.id === canvasId ? { ...c, name: nextName } : c))
-      const updated = next.find((c) => c.id === canvasId)
-      if (updated) {
-        // Persist immediately
-        saveCanvasToBackend(updated)
-      }
-      return next
-    })
-  }
 
   const copyCurrentCanvasLink = async () => {
     if (!currentCanvasId) return
@@ -322,26 +301,6 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
     }
   }
 
-  const deleteCanvas = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation()
-    try {
-      await fetch(`/api/canvases/${id}`, { method: 'DELETE' })
-      
-      const newCanvases = canvases.filter(c => c.id !== id)
-      if (newCanvases.length === 0) {
-        createNewCanvas()
-      } else {
-        setCanvases(newCanvases)
-        if (currentCanvasId === id) {
-          const nextCanvas = newCanvases[0]
-          setCurrentCanvasId(nextCanvas.id)
-          setMessages(nextCanvas.messages || [])
-        }
-      }
-    } catch (e) {
-      console.error('删除画布失败', e)
-    }
-  }
 
   const toggleToolDetails = (toolId: string) => {
     setExpandedTools(prev => {
@@ -383,7 +342,7 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
     scrollToBottom('auto')
   }, [messages])
 
-  const sendMessage = async (userMessage: string) => {
+  const sendMessage = async (userMessage: string, skipAddUserMessage = false) => {
     const trimmed = (userMessage || '').trim()
     if (!trimmed || isLoading) return
     setIsLoading(true)
@@ -391,13 +350,20 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
       role: 'user',
       content: trimmed,
     }
-    setMessages((prev) => [...prev, newUserMessage])
+    if (!skipAddUserMessage) {
+      setMessages((prev) => [...prev, newUserMessage])
+    }
 
     try {
-      const messageHistory = [
-        ...messages,
-        newUserMessage,
-      ].map((msg) => {
+      // 如果 skipAddUserMessage=true：用户消息通常已经被 setMessages 追加了，但 state 可能尚未刷新（闭包里还是旧 messages）
+      // 为了保证后端一定能收到“用户刚发的这条”，这里做一次兜底合并。
+      const messagesToUse = (() => {
+        if (!skipAddUserMessage) return [...messages, newUserMessage]
+        const last = messages[messages.length - 1]
+        if (last && last.role === 'user' && (last.content || '').trim() === trimmed) return messages
+        return [...messages, newUserMessage]
+      })()
+      const messageHistory = messagesToUse.map((msg) => {
         // 只把“可读文本 + 已生成图片URL”提供给模型作为上下文
         // （工具调用 UI 不进入历史；图片 URL 用于后续 edit_image 自动找到源图）
         let content = msg.content || ''
@@ -595,26 +561,201 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
     }
   }
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      alert('只支持图片文件')
+      return
+    }
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      if (!response.ok) {
+        throw new Error('上传失败')
+      }
+      
+      const data = await response.json()
+      setUploadedImages(prev => [...prev, data.url])
+    } catch (error) {
+      console.error('图片上传失败:', error)
+      alert('图片上传失败，请重试')
+    } finally {
+      // 清空文件选择，允许重复选择同一文件
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const removeUploadedImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // 处理粘贴图片
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    try {
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.type.indexOf('image') !== -1) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (!file) continue
+
+          // 异步上传，但不阻塞
+          (async () => {
+            try {
+              const formData = new FormData()
+              formData.append('file', file)
+
+              const response = await fetch('/api/upload-image', {
+                method: 'POST',
+                body: formData,
+              })
+
+              if (!response.ok) {
+                throw new Error('上传失败')
+              }
+
+              const data = await response.json()
+              setUploadedImages(prev => [...prev, data.url])
+            } catch (error) {
+              console.error('图片粘贴上传失败:', error)
+              alert('图片粘贴上传失败，请重试')
+            }
+          })()
+          break // 只处理第一张图片
+        }
+      }
+    } catch (error) {
+      console.error('粘贴处理错误:', error)
+    }
+  }
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
-    const userMessage = input.trim()
+    if ((!input.trim() && uploadedImages.length === 0) || isLoading) return
+    
+    // 构建消息内容：文本 + 图片URL
+    let messageContent = input.trim()
+    const imageUrls = [...uploadedImages] // 保存图片URL列表
+    
+    if (uploadedImages.length > 0) {
+      const imageTexts = uploadedImages.map(url => `[图片: ${url}]`).join('\n')
+      if (messageContent) {
+        messageContent = `${messageContent}\n\n${imageTexts}`
+      } else {
+        messageContent = imageTexts
+      }
+    }
+    
+    // 创建用户消息，包含图片URL列表
+    const userMessageObj: Message = {
+      role: 'user',
+      content: messageContent,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+    }
+    
+    // 先添加到消息列表显示
+    setMessages(prev => [...prev, userMessageObj])
+    
     setInput('')
-    await sendMessage(userMessage)
+    setUploadedImages([]) // 清空上传的图片
+    
+    // 发送消息（skipAddUserMessage=true 因为已经添加了）
+    await sendMessage(messageContent, true)
   }
 
   // 首页创建项目后，会把首条问题写入 sessionStorage：pending_prompt:<canvasId>
-  // 进入画板时自动发送一次。
+  // 进入画板时，先显示为用户消息，然后自动发送
   useEffect(() => {
     if (!currentCanvasId) return
-    if (isLoading) return
+    
     const key = `pending_prompt:${currentCanvasId}`
+    const imagesKey = `pending_images:${currentCanvasId}`
     const pending = sessionStorage.getItem(key)
+    const pendingImages = sessionStorage.getItem(imagesKey)
+    
     if (!pending || !pending.trim()) return
+    
+    // 解析图片列表
+    let imageUrls: string[] = []
+    if (pendingImages) {
+      try {
+        imageUrls = JSON.parse(pendingImages) as string[]
+      } catch (e) {
+        console.error('解析图片列表失败', e)
+      }
+    }
+    
+    // 先显示为用户消息（显示在对话最前面）
+    const userMessage: Message = {
+      role: 'user',
+      content: pending.trim(),
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+    }
+    
+    // 清理 sessionStorage（在设置消息之前清理，避免重复处理）
     sessionStorage.removeItem(key)
-    setTimeout(() => {
-      sendMessage(pending.trim())
-    }, 0)
-  }, [currentCanvasId, isLoading])
+    sessionStorage.removeItem(imagesKey)
+    
+    // 标记需要发送的消息
+    pendingSendRef.current = pending.trim()
+    
+    // 设置消息（覆盖任何已有的消息）
+    setMessages([userMessage])
+  }, [currentCanvasId])
+  
+  // 监听消息变化，当消息设置完成后自动发送
+  useEffect(() => {
+    if (!pendingSendRef.current) return
+    if (messages.length === 0) return
+    if (isLoading) return
+    
+    const firstMessage = messages[0]
+    // 检查消息内容是否匹配（支持纯文本或包含图片URL标记）
+    const messageContent = firstMessage.content || ''
+    const pendingContent = pendingSendRef.current
+    
+    // 匹配逻辑：直接匹配，或者消息内容包含pending内容（因为可能添加了图片标记）
+    if (firstMessage.role === 'user' && 
+        (messageContent === pendingContent || messageContent.includes(pendingContent))) {
+      // 消息已设置，现在可以发送了
+      const messageToSend = pendingSendRef.current
+      pendingSendRef.current = null // 清除标记
+      
+      // 延迟发送，确保状态已更新，并且确保messages已经设置完成
+      setTimeout(() => {
+        // 确保messages中有这条消息，如果没有则重新添加
+        setMessages(prev => {
+          const hasMessage = prev.some(m => 
+            m.role === 'user' && 
+            (m.content === messageToSend || m.content?.includes(messageToSend))
+          )
+          if (!hasMessage) {
+            return [...prev, { role: 'user', content: messageToSend, imageUrls: firstMessage.imageUrls }]
+          }
+          return prev
+        })
+        
+        // 再延迟一点确保状态更新完成
+        setTimeout(() => {
+          sendMessage(messageToSend, true)
+        }, 50)
+      }, 150)
+    }
+  }, [messages, isLoading])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -625,24 +766,17 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
 
   const cleanMessageContent = (content: string) => {
     if (!content) return ''
-    // 移除 Markdown 图片语法 ![...](...)
-    let cleaned = content.replace(/!\[.*?\]\(.*?\)/g, '')
-    // 移除 [图片url] 标记
-    cleaned = cleaned.replace(/\[图片url\]/g, '')
-    // 移除原始 URL 链接（http/https 开头，直到空格或换行）
-    // 这种正则比较激进，为了防止误伤，我们只移除看起来像是单独存在的图片 URL
-    // 或者我们可以依靠上面的逻辑，如果 AI 能够遵循不输出 URL 最好
-    // 现阶段我们主要处理常见的 Markdown 链接形式和纯 URL
-    cleaned = cleaned.replace(/https?:\/\/\S+\.(png|jpg|jpeg|gif|webp)(\?\S*)?/gi, '')
-    
-    return cleaned.trim()
+    // 不进行任何过滤，直接返回原始内容
+    return content
   }
 
   // 获取工具显示名称
   const getToolDisplayName = (name: string) => {
     const map: Record<string, string> = {
       'generate_image': '生成图像',
-      'edit_image': '编辑图像'
+      'edit_image': '编辑图像',
+      'generate_volcano_image': '生成图像',
+      'edit_volcano_image': '编辑图像',
     }
     return map[name] || name
   }
@@ -665,87 +799,10 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
               <ArrowLeft size={18} />
               <span>首页</span>
             </button>
-            <div className="canvas-history-wrapper">
-              <button 
-                className={`control-btn ${showHistory ? 'active' : ''}`}
-                onClick={() => setShowHistory(!showHistory)}
-                title="历史画布"
-              >
-                <History size={20} />
-                <span>项目列表</span>
-              </button>
-              
-              {showHistory && (
-                <div className="canvas-history-dropdown">
-                  <div className="history-header">
-                    <span>我的项目 ({canvases.length})</span>
-                    <button className="close-history" onClick={() => setShowHistory(false)}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <div className="history-list">
-                    {canvases.map(canvas => (
-                      <div 
-                        key={canvas.id} 
-                        className={`history-item ${currentCanvasId === canvas.id ? 'active' : ''}`}
-                        onClick={() => switchCanvas(canvas.id)}
-                      >
-                        <div className="history-item-icon">
-                          <LayoutGrid size={16} />
-                        </div>
-                        <div className="history-item-info">
-                          {editingCanvasId === canvas.id ? (
-                            <input
-                              className="history-name-input"
-                              value={editingCanvasName}
-                              onChange={(e) => setEditingCanvasName(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  commitRenameCanvas(canvas.id, editingCanvasName)
-                                } else if (e.key === 'Escape') {
-                                  e.preventDefault()
-                                  setEditingCanvasId(null)
-                                  setEditingCanvasName('')
-                                }
-                              }}
-                              onBlur={() => commitRenameCanvas(canvas.id, editingCanvasName)}
-                              autoFocus
-                            />
-                          ) : (
-                            <span className="history-name">
-                              {canvas.name}
-                            </span>
-                          )}
-                          <span className="history-date">
-                            {new Date(canvas.createdAt).toLocaleString()}
-                          </span>
-                          <span className="history-count">{getCanvasImageCount(canvas)} 张图片</span>
-                        </div>
-                        <button
-                          className="rename-canvas-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            beginRenameCanvas(canvas)
-                          }}
-                          title="重命名项目"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button 
-                          className="delete-canvas-btn"
-                          onClick={(e) => deleteCanvas(e, canvas.id)}
-                          title="删除画布"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <button className="control-btn" onClick={onToggleTheme} title="切换主题">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <span>{theme === 'dark' ? '亮色' : '暗色'}</span>
+            </button>
 
             <button
               className="control-btn"
@@ -777,9 +834,76 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
                 key={currentCanvasId}
                 ref={excalidrawRef}
                 canvasId={currentCanvasId}
+                theme={theme}
                 initialData={currentCanvasData}
                 onDataChange={(data) => {
                   updateCurrentCanvasData(() => data)
+                }}
+                onThemeChange={(nextTheme) => {
+                  if (nextTheme === 'dark' || nextTheme === 'light') {
+                    onSetTheme(nextTheme)
+                  }
+                }}
+                onImageToInput={async (url) => {
+                  // 将图片添加到输入框
+                  try {
+                    // 如果是 data URL，需要先上传到服务器
+                    if (url.startsWith('data:')) {
+                      // 将 data URL 转换为 Blob 并上传
+                      const response = await fetch(url)
+                      const blob = await response.blob()
+                      const formData = new FormData()
+                      formData.append('file', blob, 'image.png')
+                      
+                      const uploadResponse = await fetch('/api/upload-image', {
+                        method: 'POST',
+                        body: formData,
+                      })
+                      
+                      if (!uploadResponse.ok) {
+                        throw new Error('上传失败')
+                      }
+                      
+                      const data = await uploadResponse.json()
+                      setUploadedImages(prev => [...prev, data.url])
+                    } else if (url.startsWith('/storage/')) {
+                      // 本地路径，直接使用
+                      setUploadedImages(prev => [...prev, url])
+                    } else {
+                      // 其他 URL，可能需要处理
+                      // 如果是 http/https，可能需要下载并上传
+                      if (url.startsWith('http://') || url.startsWith('https://')) {
+                        try {
+                          const response = await fetch(url)
+                          const blob = await response.blob()
+                          const formData = new FormData()
+                          formData.append('file', blob, 'image.png')
+                          
+                          const uploadResponse = await fetch('/api/upload-image', {
+                            method: 'POST',
+                            body: formData,
+                          })
+                          
+                          if (uploadResponse.ok) {
+                            const data = await uploadResponse.json()
+                            setUploadedImages(prev => [...prev, data.url])
+                          } else {
+                            // 如果上传失败，尝试直接使用原 URL
+                            setUploadedImages(prev => [...prev, url])
+                          }
+                        } catch (e) {
+                          console.error('处理图片 URL 失败:', e)
+                          // 失败时直接使用原 URL
+                          setUploadedImages(prev => [...prev, url])
+                        }
+                      } else {
+                        setUploadedImages(prev => [...prev, url])
+                      }
+                    }
+                  } catch (err) {
+                    console.error('处理图片失败:', err)
+                    alert('添加图片到输入框失败，请重试')
+                  }
                 }}
                     />
             )}
@@ -799,7 +923,7 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
         <div className={`chat-panel ${chatPanelCollapsed ? 'collapsed' : ''}`}>
           <div className="chat-header">
             <div className="header-title">
-              <h1>生图Agent</h1>
+              <h1>PolyStudio</h1>
               <p>使用AI生成图像</p>
             </div>
             <button 
@@ -911,7 +1035,32 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
                       )}
                     </>
                   ) : (
-                    <div className="message-text">{message.content}</div>
+                    <>
+                      {/* 用户消息中的图片 */}
+                      {message.imageUrls && message.imageUrls.length > 0 && (
+                        <div className="message-images">
+                          {message.imageUrls.map((url, imgIndex) => (
+                            <div key={`user-img-${imgIndex}`} className="message-image">
+                              <img src={url} alt={`用户上传的图片 ${imgIndex + 1}`} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* 用户消息文本 */}
+                      {(() => {
+                        // 移除图片URL标记，只显示文本内容
+                        const textContent = message.content
+                          .split('\n')
+                          .filter(line => !line.trim().startsWith('[图片:'))
+                          .join('\n')
+                          .trim()
+                        return textContent ? (
+                          <div className="message-text">{textContent}</div>
+                        ) : message.imageUrls && message.imageUrls.length > 0 ? (
+                          <div className="message-text" style={{ fontStyle: 'italic', color: '#9ca3af' }}>（已发送图片）</div>
+                        ) : null
+                      })()}
+                    </>
                   )}
                 </div>
               </div>
@@ -921,22 +1070,58 @@ const ChatInterface = ({ initialCanvasId }: ChatInterfaceProps) => {
           </div>
 
           <div className="chat-input-container">
-            <textarea
-              className="chat-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="输入提示词生成图像..."
-              rows={1}
-              disabled={isLoading}
-            />
-            <button
-              className="send-button"
-              onClick={handleSend}
-              disabled={isLoading || !input.trim()}
-            >
-              <Send size={18} />
-            </button>
+            {/* 上传的图片预览 */}
+            {uploadedImages.length > 0 && (
+              <div className="uploaded-images-preview">
+                {uploadedImages.map((url, index) => (
+                  <div key={index} className="uploaded-image-item">
+                    <img src={url} alt={`上传的图片 ${index + 1}`} />
+                    <button
+                      className="remove-image-btn"
+                      onClick={() => removeUploadedImage(index)}
+                      title="移除图片"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div className="input-row">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                className="upload-image-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                title="上传图片"
+              >
+                <Paperclip size={18} />
+              </button>
+              <textarea
+                className="chat-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="输入提示词生成图像..."
+                rows={1}
+                disabled={isLoading}
+              />
+              <button
+                className="send-button"
+                onClick={handleSend}
+                disabled={isLoading || (!input.trim() && uploadedImages.length === 0)}
+              >
+                <Send size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

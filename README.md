@@ -1,4 +1,4 @@
-# 生图Agent（001-生图Agent_new）
+# PolyStudio
 
 一个「对话式生图/改图 + 可视化画板」项目：FastAPI 后端通过 LangGraph 编排工具调用，React 前端用 Excalidraw 做画板承载与项目管理，支持 SSE 流式输出、图片自动落到画板、项目链接与历史记录。
 
@@ -18,7 +18,7 @@
 ### 目录结构
 
 ```
-001-生图Agent_new/
+PolyStudio/
 ├── backend/                 # FastAPI 后端
 │   ├── app/                 # 业务代码
 │   ├── requirements.txt     # Python 依赖（以此为准）

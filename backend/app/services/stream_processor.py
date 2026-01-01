@@ -26,6 +26,7 @@ class StreamProcessor:
         self.current_content = ""
         self.current_tool_calls = []
         self.text_buffer = "" # 用于累积日志打印的文本缓冲区
+        self.tool_call_args: Dict[str, Dict[str, Any]] = {}  # 用于累积工具调用参数
         # LangGraph 默认 recursion_limit=25，生成多张图会很容易超过这个步数导致报错
         self.recursion_limit = int(os.getenv("RECURSION_LIMIT", "200"))
 
@@ -173,6 +174,9 @@ class StreamProcessor:
             if isinstance(message_chunk, ToolMessage):
                 logger.info(f"🔧 工具调用结果: tool_call_id={message_chunk.tool_call_id}")
                 logger.info(f"   内容: {str(message_chunk.content)[:200]}")
+                # 清理已完成的工具调用参数
+                if message_chunk.tool_call_id in self.tool_call_args:
+                    del self.tool_call_args[message_chunk.tool_call_id]
                 event = {
                     "type": "tool_result",
                     "tool_call_id": message_chunk.tool_call_id,
@@ -238,14 +242,25 @@ class StreamProcessor:
                             logger.debug(f"⚠️  跳过无效的工具调用 (name或id为空): name={tool_name}, id={tool_call_id}")
                             continue
 
+                        # 累积工具调用参数（流式输出中参数可能分多个chunk）
+                        if tool_call_id not in self.tool_call_args:
+                            self.tool_call_args[tool_call_id] = {}
+                        
+                        # 合并参数（后续chunk可能包含更多参数）
+                        if tool_args:
+                            self.tool_call_args[tool_call_id].update(tool_args)
+                        
+                        # 使用累积的参数
+                        final_args = self.tool_call_args[tool_call_id]
+
                         logger.info(f"🛠️  工具调用: name={tool_name}, id={tool_call_id}")
-                        logger.info(f"   参数: {tool_args}")
+                        logger.info(f"   参数: {final_args}")
                         
                         event = {
                             "type": "tool_call",
                             "id": tool_call_id,
                             "name": tool_name,
-                            "arguments": tool_args
+                            "arguments": final_args
                         }
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 

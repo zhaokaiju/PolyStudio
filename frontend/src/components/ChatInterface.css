@@ -1,7 +1,13 @@
-/* 全局变量 */
+/* 主题变量：用 data-theme 控制，避免被后加载的 CSS 覆盖成固定深色 */
 :root {
   --primary-color: #2563eb;
   --primary-hover: #1d4ed8;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+}
+
+[data-theme="dark"] {
   --bg-color: #070a12;
   --panel-bg: rgba(15, 23, 42, 0.92);
   --text-primary: rgba(229, 231, 235, 0.95);
@@ -10,9 +16,17 @@
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
   --shadow-md: 0 6px 14px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 18px 45px rgba(0, 0, 0, 0.5);
-  --radius-lg: 1rem;
-  --radius-md: 0.75rem;
-  --radius-sm: 0.5rem;
+}
+
+[data-theme="light"] {
+  --bg-color: #f8fafc;
+  --panel-bg: rgba(255, 255, 255, 0.88);
+  --text-primary: rgba(15, 23, 42, 0.96);
+  --text-secondary: rgba(15, 23, 42, 0.64);
+  --border-color: rgba(15, 23, 42, 0.12);
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 26px 60px rgba(15, 23, 42, 0.12);
 }
 
 .chat-interface {
@@ -38,7 +52,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: #0b1220;
+  background-color: var(--bg-color);
   z-index: 0;
 }
 
@@ -82,6 +96,91 @@
 .excalidraw-host button[title="菜单"],
 .excalidraw-host button[title="Menu"] {
   display: none !important;
+}
+
+/* ----------------------------------- */
+/* Excalidraw 右键菜单：只美化“容器”，避免把内部布局弄乱 */
+/* ----------------------------------- */
+.excalidraw-host .polystudio-excalidraw-menu {
+  border-radius: 16px !important;
+  border: 1px solid var(--border-color) !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.86)) !important;
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.45),
+    0 0 90px rgba(37, 99, 235, 0.14),
+    0 0 110px rgba(168, 85, 247, 0.10) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 6px !important; /* 只影响容器内边距，不改 item 的布局 */
+  overflow: hidden;
+}
+
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.92)) !important;
+  box-shadow:
+    0 22px 60px rgba(15, 23, 42, 0.12),
+    0 0 90px rgba(37, 99, 235, 0.10),
+    0 0 110px rgba(168, 85, 247, 0.08) !important;
+}
+
+/* 只做“观感”增强：不重置 padding/margin/display（避免再次把布局弄乱） */
+.excalidraw-host .polystudio-excalidraw-menu * {
+  color: var(--text-primary);
+}
+
+/* hover/选中态：不改尺寸，只改背景 */
+.excalidraw-host .polystudio-excalidraw-menu [role="menuitem"]:hover,
+.excalidraw-host .polystudio-excalidraw-menu .context-menu-item:hover,
+.excalidraw-host .polystudio-excalidraw-menu button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu [role="menuitem"]:hover,
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu .context-menu-item:hover,
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu button:hover {
+  background: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* 快捷键：做成项目列表 chip 的质感（通常是 kbd） */
+.excalidraw-host .polystudio-excalidraw-menu kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(229, 231, 235, 0.82);
+}
+
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu kbd {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: rgba(15, 23, 42, 0.74);
+}
+
+/* 隐藏所有分隔线：兼容 hr / role=separator / 我们注入的 separator / Excalidraw 自己的分隔线 */
+.excalidraw-host .polystudio-excalidraw-menu hr,
+.excalidraw-host .polystudio-excalidraw-menu [role="separator"],
+.excalidraw-host .polystudio-excalidraw-menu .polystudio-context-separator,
+.excalidraw-host .polystudio-excalidraw-menu .separator,
+.excalidraw-host .polystudio-excalidraw-menu [class*="separator"],
+.excalidraw-host .polystudio-excalidraw-menu [class*="divider"] {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  visibility: hidden !important;
+}
+
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu hr,
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu [role="separator"],
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu .polystudio-context-separator,
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu .separator,
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu [class*="separator"],
+[data-theme="light"] .excalidraw-host .polystudio-excalidraw-menu [class*="divider"] {
+  display: none !important;
+  visibility: hidden !important;
 }
 
 /* 画板控制栏 */
@@ -428,6 +527,47 @@
   isolation: isolate;
 }
 
+/* Light: 让“对话 bot 面板”真正跟主题走 */
+[data-theme="light"] .chat-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.92));
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.10),
+    0 0 90px rgba(37, 99, 235, 0.10),
+    0 0 110px rgba(168, 85, 247, 0.08);
+}
+
+[data-theme="light"] .chat-panel::before {
+  opacity: 0.55;
+}
+
+[data-theme="light"] .chat-header {
+  background: rgba(15, 23, 42, 0.03);
+  border-bottom-color: rgba(15, 23, 42, 0.10);
+}
+
+[data-theme="light"] .chat-input-container {
+  background: rgba(255, 255, 255, 0.72);
+  border-top-color: rgba(15, 23, 42, 0.10);
+}
+
+[data-theme="light"] .assistant-message .message-content {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.10);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .tool-call-header {
+  background-color: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.10);
+}
+
+[data-theme="light"] .tool-details {
+  background-color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: rgba(15, 23, 42, 0.88);
+}
+
 /* 防止 scrollIntoView/浏览器滚动算法把 chat-panel 当滚动容器滚动，造成“底部留空、内容上移” */
 @supports (overflow: clip) {
   .chat-panel {
@@ -600,6 +740,14 @@
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
 }
 
+/* Light: 用户气泡不要紫色渐变，改为浅色底 + 深色字 */
+[data-theme="light"] .user-message .message-content {
+  background: rgba(37, 99, 235, 0.12);
+  color: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
 /* Markdown 文本样式 */
 .message-text {
   width: 100%;
@@ -721,6 +869,15 @@
   margin-left: 2px;
 }
 
+/* Light: 工具标题/函数名一行的文字别用白色 */
+[data-theme="light"] .tool-name {
+  color: rgba(15, 23, 42, 0.78);
+}
+
+[data-theme="light"] .tool-toggle-icon {
+  color: rgba(15, 23, 42, 0.55);
+}
+
 /* 工具详情展开区域 */
 .tool-details {
   margin-top: 0.35rem;
@@ -771,11 +928,8 @@
   margin-top: 0.55rem;
   border-radius: 0.5rem;
   overflow: hidden;
-  border: 1px solid var(--border-color);
   width: 100%;
-  /* 与画布侧“白底板”一致，避免透明/暗底导致观感差 */
-  background: rgba(248, 250, 252, 0.96);
-  padding: 10px;
+  /* 去掉白边：移除背景色和padding */
 }
 
 .message-image img {
@@ -788,14 +942,100 @@
 }
 
 /* 输入区域 */
+.uploaded-images-preview {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.uploaded-image-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.uploaded-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.2s;
+}
+
+.remove-image-btn:hover {
+  background: rgba(220, 38, 38, 0.8);
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.upload-image-button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.upload-image-button:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.upload-image-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chat-input-container {
-  padding: 1rem 1.25rem;
   background: rgba(15, 23, 42, 0.72);
   border-top: 1px solid var(--border-color);
   display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
+  flex-direction: column;
 }
+
+.chat-input-container .input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
 
 .chat-input {
   flex: 1;
