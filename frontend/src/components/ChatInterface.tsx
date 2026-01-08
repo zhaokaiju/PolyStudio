@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Send, Paperclip, Image as ImageIcon, Sparkles, X, ChevronDown, ChevronRight, Link as LinkIcon, ArrowLeft, Sun, Moon } from 'lucide-react'
+import { Send, Paperclip, Image as ImageIcon, Sparkles, X, ChevronDown, ChevronRight, Link as LinkIcon, ArrowLeft, Sun, Moon, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import './ChatInterface.css'
 import ExcalidrawCanvas, {
@@ -817,6 +817,63 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
   const [show3DModal, setShow3DModal] = useState(false)
   const [current3DModel, setCurrent3DModel] = useState<{ url: string; format: 'obj' | 'glb'; mtlUrl?: string; textureUrl?: string } | null>(null)
 
+  // 下载3D模型文件
+  const download3DModel = async (model: { url: string; format: 'obj' | 'glb'; mtlUrl?: string; textureUrl?: string }) => {
+    try {
+      // 下载单个文件的辅助函数
+      const downloadFile = async (url: string, filename: string) => {
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`下载失败: ${response.statusText}`)
+        }
+        const blob = await response.blob()
+        const downloadUrl = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = downloadUrl
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(downloadUrl)
+      }
+
+      // 从URL提取文件名
+      const getFilename = (url: string, defaultName: string): string => {
+        try {
+          const urlObj = new URL(url, window.location.origin)
+          const pathname = urlObj.pathname
+          const filename = pathname.substring(pathname.lastIndexOf('/') + 1)
+          return filename || defaultName
+        } catch {
+          return defaultName
+        }
+      }
+
+      if (model.format === 'obj') {
+        // OBJ格式：下载OBJ、MTL和纹理文件
+        const objFilename = getFilename(model.url, 'model.obj')
+        await downloadFile(model.url, objFilename)
+        
+        if (model.mtlUrl) {
+          const mtlFilename = getFilename(model.mtlUrl, 'material.mtl')
+          await downloadFile(model.mtlUrl, mtlFilename)
+        }
+        
+        if (model.textureUrl) {
+          const textureFilename = getFilename(model.textureUrl, 'texture.png')
+          await downloadFile(model.textureUrl, textureFilename)
+        }
+      } else {
+        // GLB格式：只下载GLB文件
+        const glbFilename = getFilename(model.url, 'model.glb')
+        await downloadFile(model.url, glbFilename)
+      }
+    } catch (error) {
+      console.error('下载3D模型失败:', error)
+      alert(`下载失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    }
+  }
+
   // 获取当前画布的图片用于渲染
   const currentCanvas = getCurrentCanvas()
   const currentCanvasData =
@@ -956,7 +1013,7 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                     onModalClose={() => {
                       // 通知Excalidraw弹框已关闭
                       excalidrawRef.current?.clearSelection()
-                    }}
+                }}
                     />
             )}
           </div>
@@ -985,6 +1042,19 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                   title="关闭"
                 >
                   <X size={24} />
+                </button>
+                <button
+                  className="modal-download-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (current3DModel) {
+                      download3DModel(current3DModel)
+                    }
+                  }}
+                  title="下载3D模型"
+                >
+                  <Download size={20} />
+                  <span>下载</span>
                 </button>
                 <div className="modal-3d-viewer">
                   <Model3DViewer 
