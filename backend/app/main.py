@@ -9,8 +9,13 @@ from pathlib import Path
 from app.routers import chat
 import os
 from dotenv import load_dotenv
+from app.utils.logger import setup_logging
 
 load_dotenv()
+
+# 初始化日志系统（在应用启动时配置）
+log_level = os.getenv("LOG_LEVEL", "INFO")
+setup_logging(log_level=log_level)
 
 app = FastAPI(title="PolyStudio API", version="1.0.0")
 
