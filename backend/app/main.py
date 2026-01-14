@@ -9,8 +9,13 @@ from pathlib import Path
 from app.routers import chat
 import os
 from dotenv import load_dotenv
+from app.utils.logger import setup_logging
 
 load_dotenv()
+
+# 初始化日志系统（在应用启动时配置）
+log_level = os.getenv("LOG_LEVEL", "INFO")
+setup_logging(log_level=log_level)
 
 app = FastAPI(title="PolyStudio API", version="1.0.0")
 
@@ -27,7 +32,9 @@ app.add_middleware(
 BASE_DIR = Path(__file__).parent.parent
 STORAGE_DIR = BASE_DIR / "storage"
 IMAGES_DIR = STORAGE_DIR / "images"
+MODELS_DIR = STORAGE_DIR / "models"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 配置静态文件服务 - 用于访问保存的图片
 # 这样前端可以通过 /storage/images/文件名 访问图片

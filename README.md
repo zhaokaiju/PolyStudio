@@ -1,27 +1,19 @@
 # PolyStudio
 
-一个「对话式生图/改图 + 可视化画板」项目：FastAPI 后端通过 LangGraph 编排工具调用，React 前端提供画板承载与项目管理，支持 SSE 流式输出、图片自动落到画板、项目链接与历史记录。
+一个「对话式生图/改图 + 可视化画板」项目：FastAPI 后端通过 LangGraph 编排工具调用，React 前端用 Excalidraw 做画板承载与项目管理，支持 SSE 流式输出、图片自动落到画板、项目链接与历史记录。
 
 > 仓库总览与其他子项目导航见根目录：`README.md`
 
-## 功能概览
+### 功能概览
 
 - **对话式生成/编辑图片**：支持 `generate_image` / `edit_image`
 - **SSE 流式输出**：逐步展示工具调用与结果
-- **可视化画板**：生成的图片自动插入画布，支持缩放、对齐、框选等操作
+- **Excalidraw 画板**：生成的图片自动插入画布，支持缩放/对齐/框选
 - **项目管理**：项目列表、重命名、复制链接、删除
-- **主题切换**：支持深色/亮色主题切换
+- **全局深色主题**：前端与画板默认深色
 - **本地持久化**：
   - 图片保存到 `backend/storage/images/`
   - 项目与聊天记录保存到 `backend/storage/chat_history.json`
-
-## 界面预览
-
-### 首页
-![首页](assets/首页.png)
-
-### 画板编辑页
-![编辑页](assets/编辑页.png)
 
 ### 目录结构
 
@@ -34,9 +26,8 @@ PolyStudio/
 │   ├── scripts/             # 维护脚本（如存量图片归一化）
 │   └── storage/             # 运行数据（项目历史、生成图片）
 ├── frontend/                # React + Vite 前端
-│   ├── src/components/      # 聊天界面、画板组件、首页组件
+│   ├── src/components/      # ChatInterface / ExcalidrawCanvas / HomePage
 │   └── vite.config.ts       # /api、/storage 代理
-├── assets/                  # 项目截图
 └── CONFIG.md                # 配置说明（环境变量等）
 ```
 

@@ -44,19 +44,6 @@ logs/
 
 # Storage (运行时数据，不应提交到仓库)
 backend/storage/
-frontend/dist/
-frontend/build/
-
-# 测试文件
-test
-
-# 备份文件
-*.backup
-*.bak
-*.tmp
-
-# 前端构建产物
-.vite/
 
 
 

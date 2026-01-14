@@ -30,6 +30,11 @@ export type ExcalidrawCanvasData = {
 export type ExcalidrawCanvasHandle = {
   addImage: (args: { url: string }) => Promise<void>
   sendImageToInput: (callback: (url: string) => void) => void
+  add3DModelPreview: (args: { previewUrl: string; modelUrl: string; format: 'obj' | 'glb'; mtlUrl?: string; textureUrl?: string }) => Promise<void>
+}
+
+type ExcalidrawCanvasProps = Props & {
+  on3DModelClick?: (modelUrl: string, format: 'obj' | 'glb', mtlUrl?: string, textureUrl?: string) => void
 }
 
 type Props = {
@@ -39,6 +44,8 @@ type Props = {
   onDataChange: (data: ExcalidrawCanvasData) => void
   onImageToInput?: (url: string) => void
   onThemeChange?: (theme: 'dark' | 'light') => void
+  on3DModelClick?: (modelUrl: string, format: 'obj' | 'glb') => void
+  onModalClose?: () => void
 }
 
 function sanitizeAppState(appState: any) {
@@ -141,13 +148,17 @@ function computeNextPosition(elements: any[], maxNumPerRow = 4, spacing = 20) {
 }
 
 export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
-  ({ canvasId, theme, initialData, onDataChange, onImageToInput, onThemeChange }, ref) => {
+  ({ canvasId, theme, initialData, onDataChange, onImageToInput, onThemeChange, on3DModelClick, onModalClose }, ref) => {
     const [api, setApi] = useState<any>(null)
     const saveTimer = useRef<number | null>(null)
     const imageToInputCallbackRef = useRef<((url: string) => void) | null>(null)
     const lastThemeRef = useRef<'dark' | 'light' | null>(null)
     const lastSaveTimeRef = useRef<number>(0) // 记录上次保存时间
     const periodicSaveTimer = useRef<number | null>(null) // 30秒定时保存
+    const lastClickTimeRef = useRef<number>(0) // 记录上次点击时间（用于双击检测）
+    const lastClickedElementRef = useRef<string | null>(null) // 记录上次点击的元素ID
+    const modalJustClosedRef = useRef<boolean>(false) // 标记弹框是否刚关闭（防止立即重新打开）
+    const isInitialLoadRef = useRef<boolean>(true) // 标记是否是初始加载（防止页面加载时自动触发）
 
     const flushSave = useCallback(
       (data: ExcalidrawCanvasData) => {
@@ -266,6 +277,16 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
       }
     }, [flushSave, snapshotScene])
 
+    // 标记初始加载完成（延迟1秒，确保Excalidraw完成初始渲染和数据恢复）
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        isInitialLoadRef.current = false
+        console.log('✅ 初始加载完成，允许3D模型点击检测')
+      }, 1000) // 1秒后允许点击检测
+      
+      return () => clearTimeout(timer)
+    }, [])
+
     // 外部主题 -> Excalidraw（关键：让“切换主题”对画板生效）
     useEffect(() => {
       if (!api) return
@@ -352,9 +373,9 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
       })
     }
 
-    // 监听右键菜单，添加"发送到输入框"选项
+    // 监听右键菜单，添加"发送到输入框"和"查看3D模型"选项
     useEffect(() => {
-      if (!api || !onImageToInput) return
+      if (!api) return
 
       let processTimer: number | null = null
 
@@ -373,11 +394,91 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
           // ignore
         }
         
-        // 创建"发送到输入框"菜单项（始终显示，像其他菜单项一样）
-        const menuItem = document.createElement('div')
-        menuItem.className = 'context-menu-item polystudio-context-menu-item'
-        menuItem.setAttribute('data-action', 'send-to-input')
-        menuItem.textContent = '发送到输入框'
+        // 检查选中的元素是否是3D模型预览图
+        const currentElements = api.getSceneElements() || []
+        const currentAppState = api.getAppState()
+        const currentSelectedIds = currentAppState?.selectedElementIds || {}
+        const selectedElement = currentElements.find((el: any) => 
+          el && !el.isDeleted && el.type === 'image' && currentSelectedIds[el.id]
+        )
+        
+        let is3DModel = false
+        let modelUrl = ''
+        let modelFormat: 'obj' | 'glb' = 'obj'
+        
+        // 尝试从多个字段解析3D模型信息
+        if (selectedElement) {
+          let linkData: any = null
+          
+          // 方式1: 从link字段解析（字符串格式）
+          if (selectedElement.link && typeof selectedElement.link === 'string') {
+            try {
+              linkData = JSON.parse(selectedElement.link)
+            } catch (e) {
+              // 忽略
+            }
+          }
+          
+          // 方式2: 从customData字段解析（备用）
+          if (!linkData && (selectedElement as any).customData) {
+            try {
+              const customData = (selectedElement as any).customData
+              linkData = typeof customData === 'string' 
+                ? JSON.parse(customData) 
+                : customData
+            } catch (e) {
+              // 忽略
+            }
+          }
+          
+          // 方式3: 如果link是对象，直接使用
+          if (!linkData && selectedElement.link && typeof selectedElement.link === 'object') {
+            linkData = selectedElement.link
+          }
+          
+          // 检查是否是3D模型
+          if (linkData && linkData.type === '3d_model' && linkData.modelUrl && linkData.format) {
+            is3DModel = true
+            modelUrl = linkData.modelUrl
+            modelFormat = linkData.format
+          }
+        }
+        
+        // 创建"查看3D模型"菜单项（仅当选中3D模型预览图时显示）
+        if (is3DModel && on3DModelClick) {
+          const view3DItem = document.createElement('div')
+          view3DItem.className = 'context-menu-item polystudio-context-menu-item'
+          view3DItem.setAttribute('data-action', 'view-3d-model')
+          view3DItem.textContent = '查看3D模型'
+          
+          view3DItem.addEventListener('click', (e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            console.log('点击查看3D模型', { modelUrl, modelFormat, mtlUrl: linkData.mtlUrl, textureUrl: linkData.textureUrl })
+            on3DModelClick(modelUrl, modelFormat, linkData.mtlUrl, linkData.textureUrl)
+            
+            // 关闭菜单
+            const menu = contextMenu.closest('.context-menu') || contextMenu
+            if (menu && menu.parentNode) {
+              menu.parentNode.removeChild(menu)
+            }
+          })
+          
+          // 插入到菜单的最前面
+          const firstChild = contextMenu.firstElementChild
+          if (firstChild) {
+            contextMenu.insertBefore(view3DItem, firstChild)
+          } else {
+            contextMenu.appendChild(view3DItem)
+          }
+        }
+        
+        // 创建"发送到输入框"菜单项（仅当onImageToInput存在时显示）
+        if (onImageToInput) {
+          const menuItem = document.createElement('div')
+          menuItem.className = 'context-menu-item polystudio-context-menu-item'
+          menuItem.setAttribute('data-action', 'send-to-input')
+          menuItem.textContent = '发送到输入框'
         
         menuItem.addEventListener('click', async (e) => {
           e.preventDefault()
@@ -433,12 +534,21 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
           }
         })
 
-        // 插入到菜单的最前面（第一个位置）
-        const firstChild = contextMenu.firstElementChild
-        if (firstChild) {
-          contextMenu.insertBefore(menuItem, firstChild)
-        } else {
-          contextMenu.appendChild(menuItem)
+          // 插入到菜单中（在3D模型菜单项之后）
+          const view3DItem = contextMenu.querySelector('[data-action="view-3d-model"]')
+          if (view3DItem && view3DItem.nextSibling) {
+            contextMenu.insertBefore(menuItem, view3DItem.nextSibling)
+          } else if (view3DItem) {
+            contextMenu.appendChild(menuItem)
+          } else {
+            // 如果没有3D模型菜单项，插入到最前面
+            const firstChild = contextMenu.firstElementChild
+            if (firstChild) {
+              contextMenu.insertBefore(menuItem, firstChild)
+            } else {
+              contextMenu.appendChild(menuItem)
+            }
+          }
         }
         
         // 隐藏所有分隔线（包括 Excalidraw 自己的）
@@ -511,7 +621,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
           clearTimeout(processTimer)
         }
       }
-    }, [api, onImageToInput, combineImages])
+    }, [api, onImageToInput, on3DModelClick, combineImages])
 
     useImperativeHandle(
       ref,
@@ -649,6 +759,132 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
           // 记录保存时间
           lastSaveTimeRef.current = Date.now()
         },
+        add3DModelPreview: async ({ previewUrl, modelUrl, format, mtlUrl, textureUrl }) => {
+          if (!api) return
+
+          // 将预览图作为普通图片添加到画板
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+
+          const { width, height } = await new Promise<{ width: number; height: number }>(
+            (resolve) => {
+              img.onload = () => resolve({ width: img.naturalWidth || 400, height: img.naturalHeight || 400 })
+              img.onerror = () => resolve({ width: 400, height: 400 })
+              img.src = previewUrl
+            }
+          )
+
+          const maxW = 300
+          const scale = width > 0 ? Math.min(1, maxW / width) : 1
+          const finalW = Math.max(32, Math.round(width * scale))
+          const finalH = Math.max(32, Math.round(height * scale))
+
+          const fileId = generateId('3d_preview')
+          const created = Date.now()
+
+          const file: ExcalidrawFile = {
+            id: fileId,
+            dataURL: previewUrl,
+            mimeType: 'image/jpeg',
+            created,
+          }
+
+          const elements = api.getSceneElements() || []
+          const { x, y } = computeNextPosition(elements)
+
+          // 在预览图背后加一层白底板
+          const bgId = generateId('bg')
+          const bgElement = {
+            type: 'rectangle',
+            id: bgId,
+            x,
+            y,
+            width: finalW,
+            height: finalH,
+            angle: 0,
+            strokeColor: 'transparent',
+            backgroundColor: '#ffffff',
+            fillStyle: 'solid',
+            strokeStyle: 'solid',
+            strokeWidth: 1,
+            roughness: 0,
+            opacity: 100,
+            groupIds: [],
+            seed: randomInt(),
+            version: 1,
+            versionNonce: randomInt(),
+            isDeleted: false,
+            boundElements: null,
+            roundness: null,
+            frameId: null,
+            updated: created,
+            link: null,
+            locked: false,
+          }
+
+          // 创建图片元素，并在link字段和customData中存储3D模型信息（双重保险）
+          const modelInfo = JSON.stringify({ modelUrl, format, type: '3d_model', mtlUrl, textureUrl })
+          const newElement: any = {
+            type: 'image',
+            id: fileId,
+            x,
+            y,
+            width: finalW,
+            height: finalH,
+            angle: 0,
+            fileId,
+            strokeColor: '#0066ff',
+            fillStyle: 'solid',
+            strokeStyle: 'solid',
+            boundElements: null,
+            roundness: null,
+            frameId: null,
+            backgroundColor: 'transparent',
+            strokeWidth: 2, // 蓝色边框标识这是3D模型预览
+            roughness: 0,
+            opacity: 100,
+            groupIds: [],
+            seed: randomInt(),
+            version: 1,
+            versionNonce: randomInt(),
+            isDeleted: false,
+            index: null,
+            updated: created,
+            link: modelInfo, // 存储3D模型信息（主要方式）
+            customData: modelInfo, // 备用方式，防止link字段被Excalidraw处理
+            locked: false,
+            status: 'saved',
+            scale: [1, 1],
+            crop: null,
+          }
+
+          api.addFiles([file])
+          const nextElements = [...elements, bgElement, newElement]
+          api.updateScene({ elements: nextElements })
+
+          // 保存
+          const nextFiles = { ...(api.getFiles?.() || {}), [fileId]: file }
+          const nextAppState = api.getAppState ? api.getAppState() : {}
+          flushSave({
+            elements: nextElements,
+            appState: nextAppState,
+            files: nextFiles,
+          })
+          lastSaveTimeRef.current = Date.now()
+
+          // 注意：点击检测在onChange中处理，这里不需要额外的事件监听
+        },
+        clearSelection: () => {
+          if (api && api.updateScene) {
+            api.updateScene({ appState: { selectedElementIds: {} } })
+            // 设置标记，防止关闭后立即重新打开
+            modalJustClosedRef.current = true
+            setTimeout(() => {
+              modalJustClosedRef.current = false
+            }, 500)
+          }
+        },
+        api,
       }),
       [api, flushSave]
     )
@@ -665,6 +901,91 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
               lastThemeRef.current = nextTheme
               onThemeChange?.(nextTheme)
             }
+            
+            // 检测双击3D模型预览图（通过检测快速连续选中同一元素）
+            // 如果弹框刚关闭或还在初始加载，忽略选中事件（防止自动触发）
+            if (on3DModelClick && appState?.selectedElementIds && !modalJustClosedRef.current && !isInitialLoadRef.current) {
+              const selectedIds = Object.keys(appState.selectedElementIds)
+              if (selectedIds.length === 1) {
+                const selectedId = selectedIds[0]
+                const selectedElement = elements.find((el: any) => el.id === selectedId)
+                
+                if (selectedElement && selectedElement.type === 'image') {
+                  // 尝试从多个字段解析3D模型信息（兼容不同保存方式）
+                  let linkData: any = null
+                  
+                  // 方式1: 从link字段解析（字符串格式）
+                  if (selectedElement.link && typeof selectedElement.link === 'string') {
+                    try {
+                      linkData = JSON.parse(selectedElement.link)
+                      console.log('从link字段解析3D模型信息:', linkData)
+                    } catch (e) {
+                      console.warn('解析link字段失败:', selectedElement.link, e)
+                    }
+                  }
+                  
+                  // 方式2: 从customData字段解析（备用）
+                  if (!linkData && (selectedElement as any).customData) {
+                    try {
+                      const customData = (selectedElement as any).customData
+                      linkData = typeof customData === 'string' 
+                        ? JSON.parse(customData) 
+                        : customData
+                      console.log('从customData字段解析3D模型信息:', linkData)
+                    } catch (e) {
+                      console.warn('解析customData字段失败:', e)
+                    }
+                  }
+                  
+                  // 方式3: 如果link是对象，直接使用
+                  if (!linkData && selectedElement.link && typeof selectedElement.link === 'object') {
+                    linkData = selectedElement.link
+                    console.log('从link对象获取3D模型信息:', linkData)
+                  }
+                  
+                  // 调试：打印元素信息
+                  if (selectedElement.strokeColor === '#0066ff' && selectedElement.strokeWidth === 2) {
+                    console.log('检测到3D模型预览图元素:', {
+                      id: selectedId,
+                      link: selectedElement.link,
+                      customData: (selectedElement as any).customData,
+                      parsedData: linkData
+                    })
+                  }
+                  
+                  if (linkData && linkData.type === '3d_model' && linkData.modelUrl && linkData.format) {
+                    // 如果弹框刚关闭，忽略选中事件
+                    if (modalJustClosedRef.current) {
+                      console.log('弹框刚关闭，忽略选中事件')
+                      lastClickedElementRef.current = null
+                      return
+                    }
+                    
+                    const now = Date.now()
+                    // 检测双击：如果400ms内点击了同一个元素，认为是双击
+                    if (lastClickedElementRef.current === selectedId && 
+                        now - lastClickTimeRef.current < 400) {
+                      // 双击触发
+                      console.log('双击3D模型预览图，打开弹框', linkData)
+                      on3DModelClick(linkData.modelUrl, linkData.format, linkData.mtlUrl, linkData.textureUrl)
+                      lastClickedElementRef.current = null // 重置，避免重复触发
+                      lastClickTimeRef.current = 0
+                    } else {
+                      // 记录单击
+                      lastClickTimeRef.current = now
+                      lastClickedElementRef.current = selectedId
+                    }
+                  } else {
+                    lastClickedElementRef.current = null
+                  }
+                } else {
+                  lastClickedElementRef.current = null
+                }
+              } else {
+                lastClickedElementRef.current = null
+              }
+            }
+            
             const data: ExcalidrawCanvasData = sanitizeCanvasData({
               elements,
               appState: appState,

@@ -64,7 +64,7 @@ class StreamProcessor:
             async for chunk in agent.astream(
                 {"messages": langchain_messages},
                 {"recursion_limit": self.recursion_limit},
-                stream_mode=["messages"]  # 使用列表格式，确保流式输出
+                stream_mode=["messages"]  # 使用列表格式，确保1流式输出
             ):
                 chunk_count += 1
                 logger.debug(f"📦 收到第 {chunk_count} 个 chunk: {type(chunk)}")
@@ -229,12 +229,26 @@ class StreamProcessor:
                         if isinstance(tool_call, dict):
                             tool_call_id = tool_call.get("id")
                             tool_name = tool_call.get("name")
-                            tool_args = tool_call.get("args", {})
+                            # 尝试多种可能的参数字段名
+                            tool_args = tool_call.get("args") or tool_call.get("arguments") or {}
+                            logger.debug(f"📋 字典格式工具调用: id={tool_call_id}, name={tool_name}, args类型={type(tool_args)}")
                         else:
                             # ToolCall 对象
                             tool_call_id = getattr(tool_call, "id", None)
                             tool_name = getattr(tool_call, "name", None)
-                            tool_args = getattr(tool_call, "args", {})
+                            # 尝试多种可能的参数属性名
+                            tool_args = getattr(tool_call, "args", None) or getattr(tool_call, "arguments", None)
+                            if tool_args is None:
+                                # 尝试通过 dict() 方法获取
+                                if hasattr(tool_call, "dict"):
+                                    tool_dict = tool_call.dict()
+                                    tool_args = tool_dict.get("args") or tool_dict.get("arguments") or {}
+                                else:
+                                    tool_args = {}
+                            logger.debug(f"📋 对象格式工具调用: id={tool_call_id}, name={tool_name}, args类型={type(tool_args)}, 对象类型={type(tool_call)}")
+                            # 打印对象的所有属性用于调试
+                            if hasattr(tool_call, "__dict__"):
+                                logger.debug(f"   对象属性: {list(tool_call.__dict__.keys())}")
                         
                         # 关键修复：严格检查 name 是否存在且非空
                         # 在流式输出中，某些 chunk 可能包含 name 为空或 None 的 tool_call
@@ -242,12 +256,24 @@ class StreamProcessor:
                             logger.debug(f"⚠️  跳过无效的工具调用 (name或id为空): name={tool_name}, id={tool_call_id}")
                             continue
 
+                        # 处理参数：如果是字符串（JSON格式），需要解析
+                        if isinstance(tool_args, str):
+                            try:
+                                tool_args = json.loads(tool_args)
+                                logger.debug(f"✅ 成功解析JSON参数: {tool_args}")
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"⚠️  工具参数不是有效的JSON，使用空字典: {tool_args}, 错误: {e}")
+                                tool_args = {}
+                        elif tool_args is None:
+                            tool_args = {}
+                            logger.debug(f"⚠️  工具参数为None，使用空字典")
+
                         # 累积工具调用参数（流式输出中参数可能分多个chunk）
                         if tool_call_id not in self.tool_call_args:
                             self.tool_call_args[tool_call_id] = {}
                         
                         # 合并参数（后续chunk可能包含更多参数）
-                        if tool_args:
+                        if tool_args and isinstance(tool_args, dict):
                             self.tool_call_args[tool_call_id].update(tool_args)
                         
                         # 使用累积的参数
