@@ -77,6 +77,27 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false)
   const pendingSendRef = useRef<string | null>(null) // 标记待发送的消息
 
+  // 清理参数中的base64数据，避免保存到历史记录
+  const sanitizeArguments = (args: any): any => {
+    if (!args || typeof args !== 'object') return args
+    const sanitized = { ...args }
+    for (const key in sanitized) {
+      const value = sanitized[key]
+      if (typeof value === 'string') {
+        // 如果是base64格式的字符串（data:image/...;base64, 或很长的base64字符串），替换为占位符
+        if (value.startsWith('data:image/') && value.includes('base64,')) {
+          sanitized[key] = '[Base64数据已隐藏]'
+        } else if (value.length > 1000 && /^[A-Za-z0-9+/=]+$/.test(value)) {
+          // 可能是纯base64字符串（很长且只包含base64字符）
+          sanitized[key] = '[Base64数据已隐藏]'
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = sanitizeArguments(value)
+      }
+    }
+    return sanitized
+  }
+
   const emptyCanvasData: ExcalidrawCanvasData = useMemo(
     () => ({ elements: [], appState: {}, files: {} }),
     []
@@ -481,7 +502,7 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                   appendToolStep({
                             id: event.id,
                             name: event.name,
-                            arguments: event.arguments,
+                            arguments: sanitizeArguments(event.arguments),
                     status: 'executing',
                   })
                   break
@@ -519,11 +540,26 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                            } catch (e) {
                              // ignore
                            }
+                           // 清理result中的base64数据
+                           let sanitizedResult = event.content
+                           try {
+                             const resultObj = JSON.parse(event.content)
+                             const sanitizedObj = sanitizeArguments(resultObj)
+                             sanitizedResult = JSON.stringify(sanitizedObj)
+                           } catch (e) {
+                             // 如果不是JSON，检查是否是base64字符串
+                             if (typeof event.content === 'string' && 
+                                 (event.content.startsWith('data:image/') || 
+                                  (event.content.length > 1000 && /^[A-Za-z0-9+/=]+$/.test(event.content)))) {
+                               sanitizedResult = '[Base64数据已隐藏]'
+                             }
+                           }
+                           
                            return { 
                              ...tc, 
                              status: 'done' as const, 
-                             result: event.content,
-                      arguments: updatedArgs,
+                             result: sanitizedResult,
+                      arguments: sanitizeArguments(updatedArgs),
                       imageUrl,
                       videoUrl,
                       modelUrl,

@@ -439,7 +439,7 @@ class EditVolcanoImageInput(BaseModel):
 @tool("edit_volcano_image", args_schema=EditVolcanoImageInput)
 def edit_volcano_image_tool(prompt: str, image_url: str, size: str = "1:1") -> str:
     """
-    火山引擎图片编辑服务（Seedream 4.0-4.5 API），基于已有图片和提示词生成新的图片。
+    火山引擎图片编辑服务（Seedream 4.0-4.5 API），基于已有图片和提示词生成新的图片，如保持角色一致性，场景一致性则使用edit_volcano_image_tool工具。
 
     Args:
         prompt: 编辑提示词（支持中英文）
