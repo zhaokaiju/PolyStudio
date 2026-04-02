@@ -188,6 +188,8 @@ async def chat(request: ChatRequest):
 
         async def stream_and_save():
             assistant_content = ""
+            # 收集工具调用结果（图片/视频等媒体 URL）
+            tool_results: list[dict] = []
 
             # 广播用户消息给前端（await 直接调用，不用 create_task）
             user_event = json.dumps({"type": "user_message", "content": request.message}, ensure_ascii=False)
@@ -206,11 +208,18 @@ async def chat(request: ChatRequest):
                             await manager.broadcast(canvas_id, data_str)
                         else:
                             await manager.broadcast_all(data_str)
-                        # 收集 assistant 内容
+                        # 收集 assistant 文本内容与工具调用结果
                         try:
                             ev = json.loads(data_str)
-                            if ev.get("type") == "delta" and ev.get("content"):
+                            ev_type = ev.get("type")
+                            if ev_type == "delta" and ev.get("content"):
                                 assistant_content += ev["content"]
+                            elif ev_type == "tool_result":
+                                # 保留工具调用结果（含图片/视频 URL 等）
+                                tool_results.append({
+                                    "tool_call_id": ev.get("tool_call_id"),
+                                    "content": ev.get("content"),
+                                })
                         except Exception:
                             pass
                     elif data_str == "[DONE]":
@@ -224,17 +233,46 @@ async def chat(request: ChatRequest):
             try:
                 import time
                 ts = int(time.time() * 1000)
-                new_canvas = {
-                    "id": f"canvas-{ts}",
-                    "name": request.message[:30],
-                    "createdAt": ts,
-                    "messages": [
-                        {"role": "user", "content": request.message},
-                        {"role": "assistant", "content": assistant_content},
-                    ],
-                    "data": {"elements": [], "appState": {}, "files": {}},
-                }
-                await asyncio.to_thread(history_service.save_canvas, new_canvas)
+
+                # 构建本轮新增的消息（用户 + 助手）
+                new_messages = [
+                    {"role": "user", "content": request.message},
+                    {
+                        "role": "assistant",
+                        "content": assistant_content,
+                        # 若有工具调用结果（图片等），附加到 assistant 消息
+                        **({"tool_results": tool_results} if tool_results else {}),
+                    },
+                ]
+
+                if canvas_id:
+                    # 已有项目：加载原有 canvas，追加本轮消息，不新建项目
+                    existing_canvases = history_service.get_canvases()
+                    existing = next((c for c in existing_canvases if c.get("id") == canvas_id), None)
+                    if existing:
+                        existing_messages = existing.get("messages", [])
+                        existing["messages"] = existing_messages + new_messages
+                        await asyncio.to_thread(history_service.save_canvas, existing)
+                    else:
+                        # canvas_id 在历史中找不到（可能已删除），退化为新建
+                        canvas_to_save = {
+                            "id": canvas_id,
+                            "name": request.message[:30],
+                            "createdAt": ts,
+                            "messages": new_messages,
+                            "data": {"elements": [], "appState": {}, "files": {}},
+                        }
+                        await asyncio.to_thread(history_service.save_canvas, canvas_to_save)
+                else:
+                    # 没有 canvas_id：新建项目
+                    new_canvas = {
+                        "id": f"canvas-{ts}",
+                        "name": request.message[:30],
+                        "createdAt": ts,
+                        "messages": new_messages,
+                        "data": {"elements": [], "appState": {}, "files": {}},
+                    }
+                    await asyncio.to_thread(history_service.save_canvas, new_canvas)
             except Exception as e:
                 logger.warning(f"保存对话历史失败: {e}")
 

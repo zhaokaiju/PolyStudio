@@ -6,7 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from app.routers import chat
+from app.routers import chat, settings
 import os
 from dotenv import load_dotenv
 from app.utils.logger import setup_logging
@@ -48,6 +48,7 @@ if STORAGE_DIR.exists():
 
 # 注册路由
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(settings.router, prefix="/api", tags=["settings"])
 
 
 @app.websocket("/ws/{canvas_id}")

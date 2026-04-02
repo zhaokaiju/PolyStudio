@@ -28,16 +28,13 @@ export type ExcalidrawCanvasData = {
 }
 
 export type ExcalidrawCanvasHandle = {
+  clearSelection: () => void
   addImage: (args: { url: string }) => Promise<void>
   sendImageToInput: (callback: (url: string) => void) => void
   add3DModelPreview: (args: { previewUrl: string; modelUrl: string; format: 'obj' | 'glb'; mtlUrl?: string; textureUrl?: string }) => Promise<void>
   addVideo: (args: { videoUrl: string }) => Promise<void>
 }
 
-type ExcalidrawCanvasProps = Props & {
-  on3DModelClick?: (modelUrl: string, format: 'obj' | 'glb', mtlUrl?: string, textureUrl?: string) => void
-  onVideoClick?: (videoUrl: string) => void
-}
 
 type Props = {
   canvasId: string
@@ -151,7 +148,7 @@ function computeNextPosition(elements: any[], maxNumPerRow = 4, spacing = 20) {
 }
 
 export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
-  ({ canvasId, theme, initialData, onDataChange, onImageToInput, onThemeChange, on3DModelClick, onVideoClick, onModalClose }, ref) => {
+  ({ canvasId, theme, initialData, onDataChange, onImageToInput, onThemeChange, on3DModelClick, onVideoClick, onModalClose: _onModalClose }, ref) => {
     const [api, setApi] = useState<any>(null)
     const saveTimer = useRef<number | null>(null)
     const imageToInputCallbackRef = useRef<((url: string) => void) | null>(null)
@@ -161,7 +158,7 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
     const lastClickTimeRef = useRef<number>(0) // 记录上次点击时间（用于双击检测）
     const lastClickedElementRef = useRef<string | null>(null) // 记录上次点击的元素ID
     const modalJustClosedRef = useRef<boolean>(false) // 标记弹框是否刚关闭（防止立即重新打开）
-    const videoClickTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 视频单击延迟定时器
+    const videoClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null) // 视频单击延迟定时器
     const isInitialLoadRef = useRef<boolean>(true) // 标记是否是初始加载（防止页面加载时自动触发）
     const videoDoubleClickProcessedRef = useRef<string | null>(null) // 标记已经处理过的双击元素ID（防止重复触发）
     const lastSelectedElementIdRef = useRef<string | null>(null) // 记录上次选中的元素ID（用于检测选中状态变化）
@@ -1310,8 +1307,9 @@ export const ExcalidrawCanvas = forwardRef<ExcalidrawCanvasHandle, Props>(
       })
       
       if (container) {
-        container.addEventListener('dblclick', handleDblClick)
-        return () => container.removeEventListener('dblclick', handleDblClick)
+        const htmlContainer = container as HTMLElement
+        htmlContainer.addEventListener('dblclick', handleDblClick)
+        return () => htmlContainer.removeEventListener('dblclick', handleDblClick)
       }
     }, [api, canvasId, onVideoClick, on3DModelClick])
 

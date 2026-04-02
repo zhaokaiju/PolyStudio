@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo, memo } from 'react'
-import { Send, Paperclip, Image as ImageIcon, Sparkles, X, ChevronDown, ChevronRight, Link as LinkIcon, ArrowLeft, Sun, Moon, Download, Pause, Play } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { Send, Paperclip, Image as ImageIcon, Sparkles, X, ChevronDown, ChevronRight, Link as LinkIcon, ArrowLeft, Sun, Moon, Download, Pause, Play, Settings } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import './ChatInterface.css'
 import ExcalidrawCanvas, {
@@ -210,6 +210,14 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
     window.dispatchEvent(new PopStateEvent('popstate'))
   }
 
+  const goToSettings = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('canvasId')
+    url.searchParams.set('page', 'settings')
+    window.history.pushState({}, '', url.toString())
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
+
   const getCanvasIdFromUrl = () => {
     try {
       const url = new URL(window.location.href)
@@ -238,7 +246,6 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
           
           // 检查是否有待发送的消息（从首页来的）
           const pendingKey = `pending_prompt:${canvasId}`
-          const pendingImagesKey = `pending_images:${canvasId}`
           const hasPending = sessionStorage.getItem(pendingKey)
           
           // 如果有待发送的消息，不设置后端消息，让 useEffect 处理
@@ -633,6 +640,7 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
         body: JSON.stringify({
           message: trimmed,
           messages: messageHistory.slice(0, -1),
+          canvas_id: currentCanvasId || undefined,
         }),
         signal: abortController.signal, // 添加 signal 支持取消
       })
@@ -641,8 +649,8 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const reader = response.body?.getReader()
-      readerRef.current = reader // 保存reader引用
+      const reader = response.body?.getReader() ?? null
+      readerRef.current = reader
       const decoder = new TextDecoder()
 
       if (!reader) throw new Error('无法读取响应流')
@@ -1314,6 +1322,10 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               <span>{theme === 'dark' ? '亮色' : '暗色'}</span>
             </button>
+            <button className="control-btn" onClick={goToSettings} title="设置">
+              <Settings size={18} />
+              <span>设置</span>
+            </button>
 
             <button
               className="control-btn"
@@ -1455,7 +1467,6 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
               setCurrent3DModel(null)
               // 清除选中状态，防止立即重新打开
               excalidrawRef.current?.clearSelection()
-              onModalClose?.()
             }}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <button 
@@ -1466,7 +1477,6 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                     setCurrent3DModel(null)
                     // 清除选中状态，防止立即重新打开
                     excalidrawRef.current?.clearSelection()
-                    onModalClose?.()
                   }}
                   title="关闭"
                 >
@@ -1543,7 +1553,7 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
           )}
           
           {/* 调试信息（开发时可见） */}
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.DEV && (
             <div style={{ 
               position: 'fixed', 
               bottom: '10px', 
