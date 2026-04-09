@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 from app.utils.logger import setup_logging
 from app.services.connection_manager import manager
+from app.services import workspace_service
 
 load_dotenv()
 
@@ -40,6 +41,9 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 AUDIOS_DIR.mkdir(parents=True, exist_ok=True)
+
+# 确保工作空间默认文件存在
+workspace_service.ensure_workspace_defaults()
 
 # 配置静态文件服务 - 用于访问保存的图片
 # 这样前端可以通过 /storage/images/文件名 访问图片

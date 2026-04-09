@@ -128,13 +128,21 @@ def _save_settings_atomic(data: dict) -> None:
 
 # ─── 公开 API ──────────────────────────────────────────────────────────
 def get_skills_with_state() -> list[SkillWithState]:
-    """返回所有可用 skill 及其启用状态（从 settings.json 的 installedSkills key 读取）。"""
+    """返回所有可用 skill 及其启用状态。
+
+    public/ 下的 skill 默认始终启用（无需手动安装）。
+    custom/ 下的 skill 从 settings.json 的 installedSkills key 读取启用状态。
+    """
     available = scan_available_skills()
     installed: dict[str, bool] = _load_settings().get("installedSkills", {})
 
     result: list[SkillWithState] = []
     for meta in available:
-        enabled = installed.get(meta.id, False)
+        # public skills 始终启用；custom skills 按 settings 决定
+        if meta.source == "public":
+            enabled = True
+        else:
+            enabled = installed.get(meta.id, False)
         result.append(SkillWithState(
             id=meta.id,
             name=meta.name,
@@ -187,11 +195,12 @@ def get_skills_context() -> str:
 你可以访问以下专项 Skill，每个 Skill 提供特定领域的优化工作流和专业知识。
 
 **Progressive Loading 使用规则：**
-1. 当用户意图与某个 skill 的描述匹配时，先用简短中文向用户说明你打算加载哪个 skill 及原因；
-2. 然后调用 read_skill_file 工具读取该 skill 的 <location> 路径（即 SKILL.md 文件）；
-3. 仔细阅读 skill 内容，按其中定义的工作流拆解任务、逐步执行；
-4. 如需更多资源，可调用 list_skill_dir 查看 skill 目录，再用 read_skill_file 加载 references/、scripts/ 等子资源；
-5. 如果用户的需求明确不涉及任何 skill，直接正常回答，无需加载。
+1. 仔细对比用户意图与每个 skill 的 description，只有高度匹配时才加载对应 skill；
+2. 确认匹配后，先用简短中文向用户说明你打算加载哪个 skill 及原因；
+3. 然后调用 read_skill_file 工具读取该 skill 的 <location> 路径（即 SKILL.md 文件）；
+4. 仔细阅读 skill 内容，按其中定义的工作流拆解任务、逐步执行；
+5. 如需更多资源，可调用 list_skill_dir 查看 skill 目录，再用 read_skill_file 加载 references/、scripts/ 等子资源；
+6. 若无任何 skill 与用户需求明确匹配，直接正常回答，严禁强行关联或模糊匹配。
 
 {skills_block}
 </skill_system>"""

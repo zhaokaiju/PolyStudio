@@ -16,13 +16,14 @@ import {
   Tag,
   Zap,
   Package,
+  Brain,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import './SettingsPage.css'
 
 // ─── Types ──────────────────────────────────────────────────────────
 type ThemeMode = 'dark' | 'light'
-type TabId = 'skills' | 'tools' | 'mcp' | 'env'
+type TabId = 'workspace' | 'skills' | 'tools' | 'mcp' | 'env'
 type MCPView = 'form' | 'json'
 
 /** Tool skills (生图/生视频等，来自后端 DEFAULT_SKILLS) */
@@ -444,6 +445,175 @@ function SkillFilePreview({ skill }: { skill: InstalledSkill }) {
   )
 }
 
+// ─── WorkspacePanel ───────────────────────────────────────────────────
+interface WorkspaceFile {
+  id: string
+  name: string
+  desc: string
+  content: string
+}
+
+const WORKSPACE_FILE_ICONS: Record<string, { emoji: string; bg: string }> = {
+  'AGENTS.md':   { emoji: '📋', bg: 'linear-gradient(135deg,#ef4444,#f97316)' },
+  'TOOLS.md':    { emoji: '🔧', bg: 'linear-gradient(135deg,#8b5cf6,#6366f1)' },
+  'IDENTITY.md': { emoji: '🎭', bg: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
+  'USER.md':     { emoji: '🧑', bg: 'linear-gradient(135deg,#3b82f6,#6366f1)' },
+  'SOUL.md':     { emoji: '✨', bg: 'linear-gradient(135deg,#f59e0b,#f97316)' },
+  'MEMORY.md':   { emoji: '💾', bg: 'linear-gradient(135deg,#10b981,#06b6d4)' },
+}
+
+function WorkspacePanel() {
+  const [files, setFiles] = useState<WorkspaceFile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [previewMode, setPreviewMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch('/api/settings/workspace')
+      .then((r) => r.json())
+      .then((data: WorkspaceFile[]) => {
+        setFiles(Array.isArray(data) ? data : [])
+        if (data.length > 0) {
+          setSelectedId(data[0].id)
+          setEditContent(data[0].content)
+        }
+      })
+      .catch(() => setToast({ type: 'error', msg: '加载失败' }))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const handleSelect = (file: WorkspaceFile) => {
+    setSelectedId(file.id)
+    setEditContent(file.content)
+    setPreviewMode(false)
+    setToast(null)
+  }
+
+  const handleSave = async () => {
+    if (!selectedId) return
+    setSaving(true)
+    setToast(null)
+    try {
+      const res = await fetch(`/api/settings/workspace/${selectedId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editContent }),
+      })
+      if (!res.ok) throw new Error()
+      setFiles((prev) => prev.map((f) => f.id === selectedId ? { ...f, content: editContent } : f))
+      setToast({ type: 'success', msg: '已保存' })
+      setTimeout(() => setToast(null), 2500)
+    } catch {
+      setToast({ type: 'error', msg: '保存失败，请重试' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const selectedFile = files.find((f) => f.id === selectedId) ?? null
+
+  if (loading) return <div className="settings-loading">加载中…</div>
+
+  return (
+    <div className="workspace-layout">
+      {/* ── 左：文件列表 ── */}
+      <div className="workspace-list">
+        <div className="settings-panel__title">工作空间</div>
+        <div className="settings-panel__desc">
+          Agent 每次对话会自动读取这些文件，作为身份记忆注入 System Prompt。
+        </div>
+
+        {toast && (
+          <span className={`settings-toast settings-toast--${toast.type}`} style={{ marginBottom: 10, display: 'flex' }}>
+            {toast.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+            {toast.msg}
+          </span>
+        )}
+
+        {files.map((file) => {
+          const meta = WORKSPACE_FILE_ICONS[file.id] ?? { emoji: '📄', bg: 'linear-gradient(135deg,#64748b,#475569)' }
+          const isSelected = selectedId === file.id
+          const charCount = file.content.trim().length
+          return (
+            <div
+              key={file.id}
+              className={`workspace-card${isSelected ? ' workspace-card--active' : ''}`}
+              onClick={() => handleSelect(file)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && handleSelect(file)}
+            >
+              <div className="workspace-card__icon" style={{ background: meta.bg }}>
+                {meta.emoji}
+              </div>
+              <div className="workspace-card__info">
+                <div className="workspace-card__name">{file.name}</div>
+                <div className="workspace-card__filename">{file.id}</div>
+                <div className="workspace-card__chars">
+                  {charCount > 0 ? `${charCount} 字符` : '（空）'}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── 右：编辑区 ── */}
+      {selectedFile && (
+        <div className="workspace-editor">
+          <div className="workspace-editor__header">
+            <div className="workspace-editor__title">
+              <Brain size={15} />
+              {selectedFile.name}
+            </div>
+            <div className="workspace-editor__desc">{selectedFile.desc}</div>
+          </div>
+
+          <div className="workspace-editor__toolbar">
+            <button
+              className={`workspace-editor__mode-btn${!previewMode ? ' workspace-editor__mode-btn--active' : ''}`}
+              onClick={() => setPreviewMode(false)}
+            >
+              编辑
+            </button>
+            <button
+              className={`workspace-editor__mode-btn${previewMode ? ' workspace-editor__mode-btn--active' : ''}`}
+              onClick={() => setPreviewMode(true)}
+            >
+              <Eye size={13} />
+              预览
+            </button>
+          </div>
+
+          {previewMode ? (
+            <div className="workspace-editor__preview">
+              <ReactMarkdown>{editContent}</ReactMarkdown>
+            </div>
+          ) : (
+            <textarea
+              className="workspace-editor__textarea"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              placeholder={`在此编辑 ${selectedFile.id}…`}
+              spellCheck={false}
+            />
+          )}
+
+          <div className="workspace-editor__footer">
+            <button className="settings-save-btn" onClick={handleSave} disabled={saving}>
+              {saving ? '保存中…' : <><Save size={15} />保存</>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── SkillsPanel ──────────────────────────────────────────────────────
 function SkillsPanel() {
   const [skills, setSkills] = useState<InstalledSkill[]>([])
@@ -843,18 +1013,33 @@ interface SettingsPageProps {
   onToggleTheme: () => void
 }
 
-const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+const TABS: { id: TabId; label: string; icon: React.ReactNode; badge?: string }[] = [
+  { id: 'workspace', label: '工作空间', icon: <Brain size={16} />, badge: 'NEW' },
   { id: 'skills', label: 'Skills', icon: <Package size={16} /> },
   { id: 'tools', label: '工具', icon: <Wrench size={16} /> },
   { id: 'mcp', label: 'MCP 服务器', icon: <Server size={16} /> },
   { id: 'env', label: '环境变量', icon: <FileCode2 size={16} /> },
 ]
 
+const NEW_BADGE_KEY = 'polystudio_workspace_seen'
+
 export default function SettingsPage({ theme, onToggleTheme }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('skills')
+  const [activeTab, setActiveTab] = useState<TabId>('workspace')
+  const [workspaceSeen, setWorkspaceSeen] = useState<boolean>(
+    () => !!localStorage.getItem(NEW_BADGE_KEY)
+  )
+
+  const handleTabClick = (id: TabId) => {
+    setActiveTab(id)
+    if (id === 'workspace' && !workspaceSeen) {
+      localStorage.setItem(NEW_BADGE_KEY, '1')
+      setWorkspaceSeen(true)
+    }
+  }
 
   const renderPanel = useCallback(() => {
     switch (activeTab) {
+      case 'workspace': return <WorkspacePanel />
       case 'skills': return <SkillsPanel />
       case 'tools':  return <ToolsPanel />
       case 'mcp':    return <MCPPanel />
@@ -885,9 +1070,10 @@ export default function SettingsPage({ theme, onToggleTheme }: SettingsPageProps
             <button
               key={tab.id}
               className={`settings-page__tab${activeTab === tab.id ? ' settings-page__tab--active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabClick(tab.id)}
             >
               {tab.icon}{tab.label}
+              {tab.badge && !workspaceSeen && <span className="settings-page__tab-badge">{tab.badge}</span>}
             </button>
           ))}
         </nav>

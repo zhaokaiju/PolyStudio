@@ -17,8 +17,10 @@ from app.tools.virtual_anchor_generation import detect_face_tool, generate_virtu
 from app.tools.qwen_tts import qwen_voice_design_tool, qwen_voice_cloning_tool
 from app.tools.audio_mixing import concatenate_audio_tool, select_bgm_tool, mix_audio_with_bgm_tool
 from app.tools.qwen_omni_understanding import qwen_omni_understand_tool
-from app.tools.skill_tools import read_skill_file_tool, list_skill_dir_tool
+from app.tools.skill_tools import read_skill_file_tool, list_skill_dir_tool, init_skill_tool, write_skill_file_tool, delete_skill_file_tool
+from app.tools.workspace_tools import write_memory
 from app.llm.factory import create_llm
+from app.services import workspace_service
 
 # 使用统一的日志配置
 logger = logging.getLogger(__name__)
@@ -52,7 +54,12 @@ def create_agent():
         # Skill 文件读取工具（Progressive Loading）
         read_skill_file_tool,
         list_skill_dir_tool,
-        
+        # Skill 创建工具（skill-creator 工作流支持）
+        init_skill_tool,
+        write_skill_file_tool,
+        delete_skill_file_tool,
+        # Workspace 记忆写入工具
+        write_memory,
     ]
     logger.info(f"🛠️  注册工具: {[tool.name for tool in tools]}")
 
@@ -64,9 +71,11 @@ def create_agent():
 
     # 使用prompt模块生成完整提示词
     skills_context = skill_service.get_skills_context()
+    workspace_context = workspace_service.get_workspace_context()
     full_prompt = get_full_prompt(
         tools_list_text=tools_list_text,
         skills_context=skills_context,
+        workspace_context=workspace_context,
     )
 
     # 创建Agent

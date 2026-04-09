@@ -36,6 +36,7 @@ interface Message {
   imageUrls?: string[] // 用户消息中的图片URL列表
   audioUrls?: string[] // 用户消息中的音频URL列表
   videoUrls?: string[] // 用户消息中的视频URL列表
+  skillMatched?: string // 匹配的 skill 名称（如 video-creator）
 }
 
 interface CanvasImage {
@@ -412,11 +413,20 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
       })
     }
 
-    const appendToolStepExternal = (toolCall: ToolCall) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '', toolCalls: [toolCall] },
-      ])
+    const appendToolStepExternal = (toolCall: ToolCall, attachToSkill = false) => {
+      setMessages((prev) => {
+        if (attachToSkill) {
+          // 附加到最近一条含 skillMatched 的消息
+          const next = [...prev]
+          for (let i = next.length - 1; i >= 0; i--) {
+            if (next[i].skillMatched) {
+              next[i] = { ...next[i], toolCalls: [...(next[i].toolCalls || []), toolCall] }
+              return next
+            }
+          }
+        }
+        return [...prev, { role: 'assistant', content: '', toolCalls: [toolCall] }]
+      })
     }
 
     const updateToolStepExternal = (toolCallId: string, updater: (tc: ToolCall) => ToolCall) => {
@@ -452,13 +462,26 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
             }
             break
 
+          case 'skill_matched':
+            // 命中 skill：显示技能标识消息
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                content: '',
+                skillMatched: event.skill_name,
+              },
+            ])
+            break
+
           case 'tool_call':
+            // read_skill_file / list_skill_dir 附加到 skillMatched 消息，不单独新建
             appendToolStepExternal({
               id: event.id,
               name: event.name,
               arguments: sanitizeArguments(event.arguments),
               status: 'executing',
-            })
+            }, ['read_skill_file', 'list_skill_dir', 'init_skill', 'write_skill_file', 'delete_skill_file'].includes(event.name))
             break
 
           case 'tool_result':
@@ -676,15 +699,26 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
         })
       }
 
-      const appendToolStep = (toolCall: ToolCall) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: '',
-            toolCalls: [toolCall],
-          },
-        ])
+      const appendToolStep = (toolCall: ToolCall, attachToSkill = false) => {
+        setMessages((prev) => {
+          if (attachToSkill) {
+            const next = [...prev]
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].skillMatched) {
+                next[i] = { ...next[i], toolCalls: [...(next[i].toolCalls || []), toolCall] }
+                return next
+              }
+            }
+          }
+          return [
+            ...prev,
+            {
+              role: 'assistant',
+              content: '',
+              toolCalls: [toolCall],
+            },
+          ]
+        })
       }
 
       const updateToolStep = (toolCallId: string, updater: (tc: ToolCall) => ToolCall) => {
@@ -741,13 +775,26 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                   }
                   break
 
+                case 'skill_matched':
+                  // 命中 skill：显示技能标识消息
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content: '',
+                      skillMatched: event.skill_name,
+                    },
+                  ])
+                  break
+
                 case 'tool_call':
+                  // read_skill_file / list_skill_dir 附加到 skillMatched 消息，不单独新建
                   appendToolStep({
                             id: event.id,
                             name: event.name,
                             arguments: sanitizeArguments(event.arguments),
                     status: 'executing',
-                  })
+                  }, event.name === 'read_skill_file' || event.name === 'list_skill_dir')
                   break
                 
                 case 'tool_call_chunk':
@@ -1251,14 +1298,46 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
   }
 
   // 获取工具显示名称
-  const getToolDisplayName = (name: string) => {
+  const getToolDisplayName = (name: string, args?: any) => {
+    if (name === 'read_skill_file' && args?.path) {
+      const path: string = args.path
+      const parts = path.replace(/\\/g, '/').split('/')
+      // 找到 skill 目录后的部分，如 SKILL.md / references/xxx / scripts/xxx
+      const skillIdx = parts.findIndex(p => p === 'custom' || p === 'public' || p === 'builtin')
+      const subParts = skillIdx >= 0 ? parts.slice(skillIdx + 2) : parts.slice(-1)
+      const label = subParts.join('/') || 'SKILL.md'
+      return `读取 ${label}`
+    }
+    if (name === 'list_skill_dir' && args?.path) {
+      const path: string = args.path
+      const parts = path.replace(/\\/g, '/').split('/')
+      const skillIdx = parts.findIndex(p => p === 'custom' || p === 'public' || p === 'builtin')
+      const subParts = skillIdx >= 0 ? parts.slice(skillIdx + 2) : parts.slice(-1)
+      const label = subParts.join('/') || '技能目录'
+      return `查看 ${label || '技能目录'}`
+    }
     const map: Record<string, string> = {
       'generate_image': '生成图像',
       'edit_image': '编辑图像',
       'generate_volcano_image': '生成图像',
       'edit_volcano_image': '编辑图像',
+      'edit_volcano_image_tool': '编辑图像',
+      'generate_volcano_image_tool': '生成图像',
       'generate_volcano_video': '生成视频',
       'generate_3d_model': '生成3D模型',
+      'concatenate_videos': '拼接视频',
+      'concatenate_audio': '拼接音频',
+      'mix_audio_with_bgm': '混音输出',
+      'detect_face': '人脸检测',
+      'generate_virtual_anchor': '生成虚拟人',
+      'qwen_voice_design': '音色设计',
+      'qwen_voice_cloning': '声音克隆',
+      'select_background_music': '选择背景音乐',
+      'read_skill_file': '读取技能文件',
+      'list_skill_dir': '查看技能目录',
+      'init_skill': '初始化技能',
+      'write_skill_file': '写入技能文件',
+      'delete_skill_file': '删除技能文件',
     }
     return map[name] || name
   }
@@ -1560,14 +1639,15 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                 >
                   <X size={24} />
                 </button>
-                <div className="modal-video-player" style={{ padding: '20px' }}>
-                  <video 
-                    src={currentVideo} 
-                    controls 
+                <div className="modal-video-player" style={{ padding: '16px' }}>
+                  <video
+                    src={currentVideo}
+                    controls
                     autoPlay
-                    style={{ 
-                      width: '100%', 
-                      maxWidth: '800px', 
+                    style={{
+                      width: '100%',
+                      maxWidth: '640px',
+                      maxHeight: 'calc(70vh - 80px)',
                       height: 'auto',
                       borderRadius: '8px',
                       backgroundColor: '#000'
@@ -1643,6 +1723,14 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                 <div className="message-content">
                   {message.role === 'assistant' ? (
                     <>
+                      {/* 命中 Skill 标识 - 置顶显示 */}
+                      {message.skillMatched && (
+                        <div className="skill-matched-badge">
+                          <Sparkles size={13} className="skill-badge-icon" />
+                          <span>正在使用技能：{message.skillMatched}</span>
+                        </div>
+                      )}
+
                       {/* 前置文本 */}
                       {message.content && (
                         <div className="message-text">
@@ -1667,7 +1755,7 @@ const ChatInterface = ({ initialCanvasId, theme, onToggleTheme, onSetTheme }: Ch
                                   )}
                                 </div>
                                 <span className="tool-name">
-                                  {getToolDisplayName(toolCall.name)}
+                                  {getToolDisplayName(toolCall.name, toolCall.arguments)}
                                 </span>
                                 <span className="tool-toggle-icon">
                                   {expandedTools.has(toolCall.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

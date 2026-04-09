@@ -98,8 +98,8 @@
   background: var(--panel-bg);
   border-radius: var(--radius-lg);
   padding: 24px;
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: min(80vw, 720px);
+  max-height: 80vh;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -969,6 +969,44 @@
   color: rgba(229, 231, 235, 0.55);
   margin-left: 2px;
 }
+
+/* ── Skill 命中徽章 ─────────────────────────────────────────────────── */
+.skill-matched-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 0.5rem;
+  margin: 0 0 0.55rem 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(180, 160, 240, 0.75);
+  letter-spacing: 0.01em;
+  animation: skill-appear 0.25s ease-out;
+}
+
+.skill-badge-icon {
+  color: rgba(167, 139, 250, 0.55);
+  flex-shrink: 0;
+}
+
+@keyframes skill-appear {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+[data-theme="light"] .skill-matched-badge {
+  background: rgba(139, 92, 246, 0.06);
+  border-color: rgba(139, 92, 246, 0.20);
+  color: rgba(109, 70, 200, 0.65);
+}
+
+[data-theme="light"] .skill-badge-icon {
+  color: rgba(124, 58, 237, 0.85);
+}
+/* ───────────────────────────────────────────────────────────────────── */
 
 /* Light: 工具标题/函数名一行的文字别用白色 */
 [data-theme="light"] .tool-name {

@@ -10,6 +10,7 @@ import json
 import re
 import logging
 from app.services import skill_service
+from app.services import workspace_service
 
 logger = logging.getLogger(__name__)
 
@@ -374,4 +375,60 @@ async def put_env(payload: EnvUpdatePayload):
         if item.key not in known_keys:
             raise HTTPException(status_code=400, detail=f"Unknown key: {item.key}")
         _write_env_key(item.key, item.value)
+    return {"ok": True}
+
+
+# ─────────────────────────────────────────
+# Workspace 配置（USER.md / SOUL.md / MEMORY.md）
+# ─────────────────────────────────────────
+
+class WorkspaceFileResponse(BaseModel):
+    id: str        # 文件名，如 "USER.md"
+    name: str      # 显示名称
+    desc: str      # 描述
+    content: str   # 文件内容
+
+
+class WorkspaceFileUpdatePayload(BaseModel):
+    content: str
+
+
+@router.get("/settings/workspace")
+async def get_workspace_files():
+    """返回所有工作空间文件列表及内容"""
+    workspace_service.ensure_workspace_defaults()
+    result = []
+    for filename, (name, desc) in workspace_service.WORKSPACE_FILES.items():
+        try:
+            content = workspace_service.load_workspace_file(filename)
+        except Exception as e:
+            logger.warning(f"Failed to load workspace file {filename}: {e}")
+            content = ""
+        result.append(WorkspaceFileResponse(id=filename, name=name, desc=desc, content=content))
+    return result
+
+
+@router.get("/settings/workspace/{filename}")
+async def get_workspace_file(filename: str):
+    """返回指定工作空间文件内容"""
+    if filename not in workspace_service.WORKSPACE_FILES:
+        raise HTTPException(status_code=404, detail=f"Unknown workspace file: {filename}")
+    workspace_service.ensure_workspace_defaults()
+    try:
+        content = workspace_service.load_workspace_file(filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read {filename}: {e}")
+    name, desc = workspace_service.WORKSPACE_FILES[filename]
+    return WorkspaceFileResponse(id=filename, name=name, desc=desc, content=content)
+
+
+@router.put("/settings/workspace/{filename}")
+async def put_workspace_file(filename: str, payload: WorkspaceFileUpdatePayload):
+    """保存指定工作空间文件内容"""
+    if filename not in workspace_service.WORKSPACE_FILES:
+        raise HTTPException(status_code=404, detail=f"Unknown workspace file: {filename}")
+    try:
+        workspace_service.save_workspace_file(filename, payload.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save {filename}: {e}")
     return {"ok": True}
